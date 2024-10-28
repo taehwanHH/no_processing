@@ -6,93 +6,6 @@ from param import Hyper_Param
 from robotic_env import RoboticEnv
 
 DEVICE = Hyper_Param['DEVICE']
-SensEnc_latent_dim = Hyper_Param['SensEnc_latent_dim']
-CUEnc_latent_dim = Hyper_Param['CUEnc_latent_dim']
-
-class SensorEncoder(nn.Module, RoboticEnv):
-    def __init__(self, output_dim=SensEnc_latent_dim):
-        super(SensorEncoder, self).__init__()
-        RoboticEnv.__init__(self)
-
-        self.output_dim = output_dim
-
-        self.mlp = MLP(self.num_sensor_output, self.output_dim,
-                       num_neurons = Hyper_Param['SensEnc_neurons'],
-                       hidden_act = 'ReLU',
-                       out_act ='Tanh' ## including bottleneck layer
-                       )
-        self.out = nn.Linear(self.output_dim, self.output_dim)
-    def forward(self, x):
-        x = self.mlp(x)
-        encoded = torch.sigmoid(self.out(x))
-        return encoded
-
-
-class SensorDecoder(nn.Module, RoboticEnv):
-    def __init__(self, input_dim=SensEnc_latent_dim):
-        super(SensorDecoder, self).__init__()
-        RoboticEnv.__init__(self)
-
-        self.input_dim = input_dim*self.num_robot
-
-        self.mlp = MLP(self.input_dim, self.state_dim,
-                       num_neurons = Hyper_Param['SensDec_neurons'],
-                       hidden_act = 'ReLU',
-                       out_act = 'Sigmoid')
-
-    def forward(self,x):
-        decoded = self.mlp(x)
-        return decoded
-
-
-class CUEncoder(nn.Module, RoboticEnv):
-    def __init__(self, output_dim=CUEnc_latent_dim):
-        super(CUEncoder, self).__init__()
-        RoboticEnv.__init__(self)
-
-        self.output_dim = output_dim
-
-        self.mlp = MLP(self.action_dim, self.output_dim,
-                       num_neurons=Hyper_Param['CUEnc_neurons'],
-                       hidden_act='ReLU',
-                       out_act='Tanh'  ## including bottleneck layer
-                       )
-        self.out = nn.Linear(self.output_dim, self.output_dim)
-
-    def forward(self, x):
-        x = self.mlp(x)
-        encoded = torch.sigmoid(self.out(x))
-        return encoded
-
-
-class CUDecoder(nn.Module, RoboticEnv):
-    def __init__(self, input_dim=CUEnc_latent_dim):
-        super(CUDecoder, self).__init__()
-        RoboticEnv.__init__(self)
-
-        self.input_dim = input_dim
-
-        self.mlp = MLP(self.input_dim, self.action_dim,
-                       num_neurons = Hyper_Param['CUDec_neurons'],
-                       hidden_act = 'ReLU',
-                       out_act = 'Sigmoid')
-
-    def forward(self,x):
-        decoded = self.mlp(x)
-        return decoded
-
-
-class NormalizeTX:
-    def __init__(self, _iscomplex):
-        self._iscomplex = _iscomplex
-    def apply(self, x):
-
-        num_symbol = x.shape[1]//2 if self._iscomplex else x.shape[1]
-        avg_power = torch.sum(x**2, dim=1) / num_symbol
-
-        return x/torch.sqrt(avg_power).view(-1,1)
-
-
 class Channel:
     def __init__(self, _iscomplex):
         self._iscomplex = _iscomplex
@@ -131,3 +44,73 @@ class Channel:
         y = x + torch.randn_like(x) * _std
         # print(_std)
         return y
+
+
+class Digitalize:
+    def __init__(self, quant_max, qam_order, device='cpu'):
+        self.num_bit = int(torch.log2(torch.tensor(qam_order)).item())  # num_bit을 정수로 변환
+        self.qam_order = qam_order
+        self.min_data = 0
+        self.max_data = quant_max
+        self.device = device
+
+        # QAM 심볼 생성 및 고정된 정규화 인수 계산
+        M = int(self.qam_order ** 0.5)
+        qam_points = torch.arange(-(M - 1), M, 2).float()  # [-3, -1, 1, 3] for 16-QAM
+        norm_factor = torch.sqrt(torch.mean(torch.abs(qam_points)**2 * 2))  # 평균 파워 정규화
+        self.qam_points = (qam_points / norm_factor).to(self.device)  # (M,) 형태로 유지
+
+
+    def Quantization(self, data):
+        q_level = 2 ** self.num_bit
+        data_clipped = torch.clamp(data, min=self.min_data, max=self.max_data)
+        scaled_data = (data_clipped - self.min_data) / (self.max_data - self.min_data) * (q_level - 1)
+        quantized_data = torch.round(scaled_data).int()
+        return quantized_data
+
+    def Modulation(self, data):
+        M = int(self.qam_order ** 0.5)
+
+        # I와 Q 성분 계산
+        I = self.qam_points[(data // M) % M]  # (1, N)
+        Q = self.qam_points[data % M]  # (1, N)
+
+        # I와 Q를 (1, 2N) 형식으로 이어붙이기
+        qam_symbols = torch.cat((I, Q), dim=1)  # (1, 2N)
+        return qam_symbols
+
+    def Demodulation(self, symbols):
+        M = int(self.qam_order ** 0.5)
+
+        # I와 Q 성분 분리 (1, N) 형태로 사용
+        half_len = symbols.size(1) // 2
+        I = symbols[:, :half_len]  # (batch_size, N)
+        Q = symbols[:, half_len:]  # (batch_size, N)
+
+        # I/Q를 가장 가까운 QAM 포인트로 매핑
+        I_index = torch.argmin(torch.abs(I.unsqueeze(-1) - self.qam_points), dim=-1)  # (batch_size, N)
+        Q_index = torch.argmin(torch.abs(Q.unsqueeze(-1) - self.qam_points), dim=-1)  # (batch_size, N)
+
+        # 원래의 양자화된 값 복원
+        data = I_index * M + Q_index
+        return data
+
+    def Dequantization(self, quantized_data):
+        q_level = 2 ** self.num_bit
+        data = (quantized_data.float() / (q_level - 1)) * (self.max_data - self.min_data) + self.min_data
+        return data
+
+    def Txapply(self, data):
+        quantized_data = self.Quantization(data.to(self.device))
+        modulated_symbols = self.Modulation(quantized_data)
+        return modulated_symbols
+
+    def Rxapply(self, symbols):
+        demodulated_data = self.Demodulation(symbols.to(self.device))
+        recovered_data = self.Dequantization(demodulated_data)
+        return recovered_data
+
+
+
+
+

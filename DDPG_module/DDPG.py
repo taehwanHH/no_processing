@@ -3,13 +3,18 @@ import torch.nn as nn
 
 from DDPG_module.MLP import MultiLayerPerceptron as MLP
 from param import Hyper_Param
+from param_robot import Robot_Param
 from robotic_env import RoboticEnv
-from comm import SensorEncoder, SensorDecoder, CUEncoder, CUDecoder, Channel, NormalizeTX
+from comm import Channel, Digitalize
 
 DEVICE = Hyper_Param['DEVICE']
 _iscomplex = Hyper_Param['_iscomplex']
 channel_type = Hyper_Param['channel_type']
 SNR = Hyper_Param['SNR']
+qam_order = Hyper_Param['qam_order']
+
+Sense_max = Robot_Param['Sense_max']
+Act_max = Robot_Param['Act_max']
 
 class OrnsteinUhlenbeckProcess:
     """
@@ -35,43 +40,34 @@ class Actor(nn.Module,RoboticEnv):
         super(Actor, self).__init__()
         RoboticEnv.__init__(self)
 
-
-        self.sensor1_encoder = SensorEncoder()
-        self.sensor2_encoder = SensorEncoder()
-        self.sensor3_encoder = SensorEncoder()
-        self.sensor4_encoder = SensorEncoder()
-        self.encoders = [self.sensor1_encoder, self.sensor2_encoder, self.sensor3_encoder, self.sensor4_encoder]
-        self.NormalizeTX = NormalizeTX(_iscomplex)
         self.channel = Channel(_iscomplex)
-        self.sensor_decoder = SensorDecoder()
-        self.mlp = MLP(self.state_dim, self.action_dim,
+        self.sensor_digit = Digitalize(quant_max=1.2,qam_order=qam_order)
+        self.action_digit = Digitalize(quant_max=Act_max, qam_order=qam_order)
+        self.mlp = MLP(self.state_dim*2, self.action_dim,
                        num_neurons=Hyper_Param['num_neurons'],
                        hidden_act='ReLU',
                        out_act='Sigmoid')
-        self.cu_encoder = CUEncoder()
-        self.cu_decoder = CUDecoder()
 
 
     def forward(self, state):
-        encoded_list = []
-
-        split_states = torch.split(state,self.num_sensor_output,dim=1)
-        for i, encoder in enumerate(self.encoders):
-            encoded = encoder(split_states[i])
-            normalized = self.NormalizeTX.apply(encoded)
-            encoded_list.append(normalized)
-
-        encoded = torch.cat(encoded_list,dim=1).to(DEVICE)
+        symbol_list = []
         seed = torch.randint(low=0, high=70000, size=(1,)).to(DEVICE).item()
 
-        # encoded = self.sensor_encoder(state)
-        # normalized = self.NormalizeTX.apply(encoded)
-        output = getattr(self.channel, channel_type)(encoded, seed,snr=SNR)
-        decoded = self.sensor_decoder(output)
-        decision = self.mlp(decoded)
-        encoded = self.cu_encoder(decision)
-        output = getattr(self.channel, channel_type)(encoded, seed, snr=SNR)
-        action = self.cu_decoder(output)
+        ## Robot part
+        split_states = torch.split(state,self.num_sensor_output,dim=1)
+        for i in range(self.num_robot):
+            symbol = self.sensor_digit.Txapply(split_states[i])
+            symbol_list.append(symbol)
+
+        sensed_symbols = torch.cat(symbol_list,dim=1).to(DEVICE)
+        output = getattr(self.channel, channel_type)(sensed_symbols, seed,snr=SNR)
+
+        ## Remote central unit
+        decision = self.mlp(output)
+        action_symbols = self.action_digit.Txapply(decision).to(DEVICE)
+        output = getattr(self.channel, channel_type)(action_symbols, seed, snr=SNR)
+
+        action = self.action_digit.Rxapply(output).to(DEVICE)
 
         return action
 
@@ -136,7 +132,7 @@ class DDPG(nn.Module,RoboticEnv):
     def get_action(self, state, noise):
         with torch.no_grad():
 
-            action = self.actor(state)*torch.tensor(self.action_space.high, dtype=torch.float32, device=DEVICE)+noise.to(DEVICE)
+            action = self.actor(state)+noise.to(DEVICE)
             clamped_action = torch.clamp(action, min=torch.tensor(self.action_space.low, dtype=torch.float32, device=DEVICE), max=torch.tensor(self.action_space.high, dtype=torch.float32, device=DEVICE))
         return clamped_action
 

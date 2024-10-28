@@ -77,7 +77,7 @@ class RoboticEnv:
         self.num_sensor_output = 5  # pressure sensor output
         self.num_robot = 4
         self.num_joint = 2
-        self.state_dim = self.num_sensor_output * self.num_robot
+        self.state_dim = self.num_sensor_output * self.num_robot # complex value
         self.action_dim = self.num_robot * self.num_joint
         # self.state_space = gym.spaces.Box(low=0, high=1500, shape=(self.state_dim,))
         self.action_space = gym.spaces.Box(low=0, high=Act_max, shape=(self.action_dim,))

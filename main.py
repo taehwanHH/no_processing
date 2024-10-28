@@ -78,7 +78,6 @@ for n_epi in range(total_eps):
     s = env.reset()
     epi.append(n_epi)
     episode_return = 0
-
     while True:
 
         a = agent.get_action(s, agent.epsilon*ou_noise()).view(-1)
