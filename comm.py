@@ -47,7 +47,7 @@ class Channel:
 
 
 class Digitalize:
-    def __init__(self, quant_max, qam_order, device='cpu'):
+    def __init__(self, quant_max, qam_order, device='cuda'):
         self.num_bit = int(torch.log2(torch.tensor(qam_order)).item())  # num_bit을 정수로 변환
         self.qam_order = qam_order
         self.min_data = 0

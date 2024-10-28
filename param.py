@@ -25,7 +25,7 @@ Hyper_Param = {
     'channel_type': 'fading',
     'SNR' : 5,
     'comm_latency': 50,  # ms
-    'qam_order' : 64,
+    'qam_order' : 256,
     '_iscomplex' : True,
     'Saved_using': False,
     'MODEL_PATH': "saved_model",
