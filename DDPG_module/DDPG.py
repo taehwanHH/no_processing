@@ -41,7 +41,7 @@ class Actor(nn.Module,RoboticEnv):
         RoboticEnv.__init__(self)
 
         self.channel = Channel(_iscomplex)
-        self.sensor_digit = Digitalize(quant_max=0.6,qam_order=qam_order)
+        self.sensor_digit = Digitalize(quant_max=1.0,qam_order=qam_order)
         self.action_digit = Digitalize(quant_max=Act_max, qam_order=qam_order)
         self.mlp = MLP(self.state_dim*2, self.action_dim,
                        num_neurons=Hyper_Param['num_neurons'],

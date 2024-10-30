@@ -55,8 +55,11 @@ class Digitalize:
         self.device = device
 
         # QAM 심볼 생성 및 고정된 정규화 인수 계산
-        M = int(self.qam_order ** 0.5)
-        qam_points = torch.arange(-(M - 1), M, 2).float()  # [-3, -1, 1, 3] for 16-QAM
+        num_side = torch.sqrt(torch.tensor(self.qam_order)).item()
+        # M = int (num_side ** 0.5)
+        # print(M)
+        # M = int(self.qam_order ** 0.5)
+        qam_points = torch.arange(-(num_side - 1), num_side, 2).float()  # [-3, -1, 1, 3] for 16-QAM
         norm_factor = torch.sqrt(torch.mean(torch.abs(qam_points)**2 * 2))  # 평균 파워 정규화
         self.qam_points = (qam_points / norm_factor).to(self.device)  # (M,) 형태로 유지
 
@@ -70,7 +73,6 @@ class Digitalize:
 
     def Modulation(self, data):
         M = int(self.qam_order ** 0.5)
-
         # I와 Q 성분 계산
         I = self.qam_points[(data // M) % M]  # (1, N)
         Q = self.qam_points[data % M]  # (1, N)

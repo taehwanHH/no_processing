@@ -3,7 +3,7 @@ clear all;  clc;
 % .mat 파일 로드
 file_date = '2024-10-27';
 channel = '/fading/';
-latency = '200ms';
+latency = '0ms';
 
 channel_param = append(channel,latency);
 file_path = append(file_date,channel_param);
