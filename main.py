@@ -139,8 +139,15 @@ snr_title = f"{Hyper_Param['comm_latency']}ms"
 sub_directory = os.path.join(sub_directory, snr_title)
 if not os.path.exists(sub_directory):
     os.makedirs(sub_directory)
+    index = 1
 
+else:
+    existing_dirs = [d for d in os.listdir(sub_directory) if os.path.isdir(os.path.join(sub_directory, d))]
+    indices = [int(d) for d in existing_dirs if d.isdigit()]
+    index = max(indices) + 1 if indices else 1
 
+sub_directory = os.path.join(sub_directory,str(index))
+os.makedirs(sub_directory)
 # # Subdirectory index calculation
 # if not os.path.exists(sub_directory):
 #     os.makedirs(sub_directory)

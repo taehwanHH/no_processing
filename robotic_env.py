@@ -23,11 +23,10 @@ xml_path = "sim_env.xml"
 model = mujoco_py.load_model_from_path(xml_path)
 sim = mujoco_py.MjSim(model)
 viewer = mujoco_py.MjViewer(sim)
-
 viewer.cam.azimuth = 180
 viewer.cam.elevation = -5
 viewer.cam.distance = 5
-
+viewer._run_speed = 128
 # Get the viewer's window handle
 window = viewer.window
 
