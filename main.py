@@ -80,7 +80,6 @@ for n_epi in range(total_eps):
     episode_return = 0
     while True:
         a = agent.get_action(s, agent.epsilon*ou_noise()).view(-1)
-
         ns, r, done, info = env.step(a)
 
         episode_return += r.item()
